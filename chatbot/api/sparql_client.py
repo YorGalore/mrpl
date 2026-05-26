@@ -25,8 +25,7 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 
 
 class SPARQLClientError(RuntimeError):
-    """Raised when a SPARQL query fails."""
-
+    pass
 
 def escape_sparql_literal(value: str) -> str:
     return (
@@ -45,10 +44,7 @@ class SPARQLConfig:
 
 
 class VirtuosoClient:
-    """
-    Lightweight reusable client for Virtuoso SPARQL endpoint.
-    A fresh SPARQLWrapper instance is created per query to avoid state leakage.
-    """
+
 
     def __init__(self, config: Optional[SPARQLConfig] = None):
         self.config = config or SPARQLConfig()
@@ -90,12 +86,12 @@ _client = VirtuosoClient()
 
 
 def run_query(query_text: str, *, default_graph: Optional[str] = None) -> Dict[str, Any]:
-    """Public helper used by other modules."""
+
     return _client.run_query(query_text, default_graph=default_graph)
 
 
 def bindings_to_rows(result: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Convert SPARQL JSON bindings into simple row dictionaries."""
+
     rows: List[Dict[str, str]] = []
     for binding in result.get("results", {}).get("bindings", []):
         row = {key: value.get("value", "") for key, value in binding.items()}
