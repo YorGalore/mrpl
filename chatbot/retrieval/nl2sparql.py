@@ -9,7 +9,7 @@ import re
 
 template = """
 You are a cybersecurity SPARQL expert.
-Your task:
+
 - Translate the user question into valid SPARQL.
 - Use the ontology below.
 - Return ONLY SPARQL query.
@@ -20,7 +20,7 @@ Ontology:
 Question:
 {question}
 
-
+SPARQL:
 """
 
 
@@ -52,7 +52,7 @@ LIMIT 10
 # LLM Generator
 def llm_generate(question: str):
     llm = LLMProvider.get_model(DEFAULT_MODEL)
-    chain = prompt | gpt_model
+    chain = prompt | llm
 
     response = chain.invoke({
         "ontology": ONTOLOGY_CONTEXT,
@@ -124,7 +124,7 @@ def execute_question(question: str):
 # Demo
 if __name__ == "__main__":
     
-    q = "Show information about CVE-2021-44228"
+    question = "Show information about CVE-2021-44228"
 
     result = execute_question(q)
 
