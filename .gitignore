@@ -6,3 +6,12 @@
 /benchmark/*
 /bin/*
 /.idea/*
+data/graph0000001_cpe.ttl
+data/graph0000001_cve.ttl
+# database / virtuoso
+*.db
+*.lck
+*.trx
+*.pxa
+*.log
+virtuoso-data/virtuoso-data/

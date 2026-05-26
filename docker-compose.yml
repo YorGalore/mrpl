@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  virtuoso:
+    image: openlink/virtuoso-opensource-7
+    container_name: virtuoso
+    ports:
+      - "8890:8890"
+      - "1111:1111"
+    environment:
+      DBA_PASSWORD: dba
+      SPARQL_UPDATE: "true"
+      DEFAULT_GRAPH: "http://sepses.local"
+    volumes:
+      - ./virtuoso-data:/database
