@@ -1,6 +1,20 @@
+#Ditambah 
+from pathlib import Path
 from mitreattack.stix20 import MitreAttackData
 
 mitre = MitreAttackData("enterprise-attack.json")
+_mitre = None
+
+#ditambah
+def _get_mitre() -> MitreAttackData:
+    global _mitre
+    if _mitre is None:
+        if not MITRE_PATH.exists():
+            raise FileNotFoundError(
+                f"{MITRE_PATH} tidak ada. Jalankan: python scripts/download_mitre.py"
+            )
+        _mitre = MitreAttackData(str(MITRE_PATH))
+    return _mitre
 
 def get_threat_context(actor_keyword: str) -> str:
     try:

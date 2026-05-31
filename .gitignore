@@ -1,21 +1,27 @@
+__pycache__/
+*.pyc
+.env
+data/chroma_db/
+vector_db/
+
 /target/
 /bin/
-/output/*
-/input/*
-/ext-tool/*
-/benchmark/*
+
 /bin/*
 /.idea/*
+
 data/graph0000001_cpe.ttl
 data/graph0000001_cve.ttl
-# database / virtuoso
+
+# virtuoso runtime
 *.db
 *.lck
 *.trx
 *.pxa
 *.log
 virtuoso-data/virtuoso-data/
-.env
-__pycache__/
-*.pyc
-chroma_db/
+.DS_Store
+.idea/
+.vscode/
+
+

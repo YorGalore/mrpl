@@ -10,7 +10,7 @@ echo "======================================"
 echo " SEPSES RDF Loader for Virtuoso "
 echo "======================================"
 
-rdf_files=(data/*.ttl data/*.turtle)
+rdf_files=(data/cskg_dumps/*.ttl data/cskg_dumps/*.turtle)
 
 if [ ${#rdf_files[@]} -eq 0 ]; then
   echo "No RDF files found in data/ (*.ttl or *.turtle)"

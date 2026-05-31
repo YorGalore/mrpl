@@ -1,14 +1,8 @@
 import time
 import pandas as pd
 
-from chatbot.retrieval.questions import (
-    TEST_QUESTIONS
-)
-
-from chatbot.retrieval.nl2sparql import (
-    execute_question
-)
-
+from evaluation.questions import (TEST_QUESTIONS)
+from backend.sparql.nl2sparql import (execute_question)
 
 def evaluate():
 

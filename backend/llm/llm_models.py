@@ -1,25 +1,9 @@
-from dotenv import load_dotenv
-import os
-
+from backend.config import DEEPSEEK_API_KEY, DEFAULT_MODEL, OPENAI_API_KEY
 from langchain_openai import ChatOpenAI
 
-load_dotenv()
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-
-DEFAULT_MODEL = os.getenv(
-    "DEFAULT_MODEL",
-    "gpt-4o-mini"
-)
-
 SUPPORTED_MODELS = {
-    "gpt-4o-mini": {
-        "provider": "openai"
-    },
-    "deepseek-chat": {
-        "provider": "deepseek"
-    }
+    "gpt-4o-mini": {"provider": "openai"},
+    "deepseek-chat": {"provider": "deepseek"}
 }
 
 
@@ -38,14 +22,11 @@ class LLMProvider:
             if not OPENAI_API_KEY:
                 raise ValueError("OPENAI_API_KEY belum diset")
 
-            return ChatOpenAI(
-                model=model_name,
-                temperature=0,
+            return ChatOpenAI(model=model_name, temperature=0,
                 api_key=OPENAI_API_KEY
             )
 
-        elif provider == "deepseek":
-
+        if provider == "deepseek":
             if not DEEPSEEK_API_KEY:
                 raise ValueError("DEEPSEEK_API_KEY belum diset")
 

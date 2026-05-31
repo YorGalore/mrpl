@@ -1,12 +1,8 @@
 from __future__ import annotations
-
 from typing import Dict, Any, List, Optional
 
-from chatbot.api.sparql_client import (
-    PREFIXES,
-    bindings_to_rows,
-    run_query,
-    escape_sparql_literal,
+from backend.sparql.client import (
+    PREFIXES, bindings_to_rows, run_query, escape_sparql_literal,
 )
 
 # Default SEPSES Graph URIs

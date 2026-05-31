@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, List
 
 from SPARQLWrapper import SPARQLWrapper, JSON, POST
-
-DEFAULT_ENDPOINT = os.getenv("SEPSES_SPARQL_ENDPOINT", "http://localhost:8890/sparql")
-DEFAULT_GRAPH = os.getenv("SEPSES_DEFAULT_GRAPH", "http://sepses.local")
-DEFAULT_TIMEOUT = int(os.getenv("SEPSES_SPARQL_TIMEOUT", "60"))
-
+from backend.config import(
+    SPARQL_ENDPOINT as DEFAULT_ENDPOINT,
+    DEFAULT_GRAPH, SPARQL_TIMEOUT as DEFAULT_TIMEOUT
+)
 
 PREFIXES = """\
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>

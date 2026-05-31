@@ -6,21 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from chatbot.api.sparql_client import (
-    DEFAULT_GRAPH,
-    bindings_to_rows,
-    count_distinct_entities,
-    count_triples,
-    count_instances_of,
-    count_predicate_usage,
-    
-    describe_entity_neighbors,
-    list_classes,
-    list_named_graphs,
-    list_predicates,
-    sample_triples,
-    sample_instances_of,
-    search_labels,
+from backend.sparql.client import (
+    DEFAULT_GRAPH, bindings_to_rows, count_distinct_entities, count_triples, count_instances_of, 
+    count_predicate_usage, describe_entity_neighbors, list_classes, list_named_graphs, list_predicates, 
+    sample_triples, sample_instances_of,search_labels,
 )
 
 CURATED_CLASSES: Sequence[Tuple[str, str]] = (

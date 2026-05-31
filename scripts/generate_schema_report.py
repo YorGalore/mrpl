@@ -1,4 +1,4 @@
-from pathlib import Path
+from backend.sparql.schema_inspector import main
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]

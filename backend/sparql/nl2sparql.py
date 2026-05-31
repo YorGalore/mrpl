@@ -1,9 +1,8 @@
 from langchain.prompts import PromptTemplate
 
-
-from chatbot.api.sparql_client import (run_query, bindings_to_rows)
-from chatbot.llm.llm_models import (LLMProvider, DEFAULT_MODEL)
-from chatbot.retrieval.ontology_context import (ONTOLOGY_CONTEXT)
+from backend.sparql.client import run_query, bindings_to_rows
+from backend.llm.llm_models import (LLMProvider, DEFAULT_MODEL)
+from backend.sparql.ontology_context import (ONTOLOGY_CONTEXT)
 import re
 
 
