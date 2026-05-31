@@ -14,7 +14,7 @@ export function getModeLabel(mode: AnalysisMode): string {
   const labels: Record<AnalysisMode, string> = {
     threat_intelligence: "Threat Intelligence",
     log_analysis: "Security Log Analysis",
-    combined: "Combined Analysis",
+    combined: "Threat Correlation",
   };
   return labels[mode];
 }
@@ -25,7 +25,7 @@ export function getModeDescription(mode: AnalysisMode): string {
       "Analyze malware, CVEs, threat actors using SEPSES CSKG",
     log_analysis: "Parse and analyze security logs for suspicious activity",
     combined:
-      "Correlate log events with threat intelligence from CSKG",
+      "Combine security logs with global threat intelligence knowledge",
   };
   return descriptions[mode];
 }
