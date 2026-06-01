@@ -26,7 +26,8 @@ export function Sidebar({
   } = useChatStore();
 
   return (
-    <div className="flex flex-col h-full bg-[#0F172A] shadow-[8px_0_32px_rgba(0,0,0,0.35)]">
+  
+  <div className="flex flex-col h-full bg-[#0F172A] shadow-[8px_0_32px_rgba(0,0,0,0.35)]">
       {/* Header */}
 
       <div className="px-5 py-6">
