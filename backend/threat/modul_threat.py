@@ -86,3 +86,4 @@ if __name__ == "__main__":
     print(get_malware_context("WannaCry"))
     print()
     print(get_malware_context("Emotet"))
+    print()

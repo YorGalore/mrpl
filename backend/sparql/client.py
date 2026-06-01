@@ -27,7 +27,6 @@ PREFIX cpe: <http://w3id.org/sepses/vocab/ref/cpe#>
 PREFIX cvss: <http://w3id.org/sepses/vocab/ref/cvss#>
 """
 
-
 class SPARQLClientError(RuntimeError):
     pass
 
@@ -85,8 +84,8 @@ class VirtuosoClient:
         
         wrapper = self._new_wrapper()
         target_graph = default_graph or self.config.default_graph
-        if target_graph:
-            wrapper.addDefaultGraph(target_graph)
+        if target_graph and target_graph.strip():
+            wrapper.addDefaultGraph(target_graph.strip())
         if infer is None:
             infer = self.config.infer
         if infer:

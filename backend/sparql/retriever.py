@@ -6,9 +6,9 @@ from backend.sparql.client import (
 )
 
 # Default SEPSES Graph URIs
-CAPEC_GRAPH = "http://sepses.ifs.tuwien.ac.at/data/capec"
-CWE_GRAPH = "http://sepses.ifs.tuwien.ac.at/data/cwe"
-SNORT_GRAPH = "http://sepses.ifs.tuwien.ac.at/data/snortrule"
+CAPEC_GRAPH = DEFAULT_GRAPH
+CWE_GRAPH = DEFAULT_GRAPH
+SNORT_GRAPH = DEFAULT_GRAPH
 
 # Generic Retrieval Helpers
 def _run_select(query: str):

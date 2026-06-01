@@ -1,18 +1,14 @@
-"""
-RAG/GraphRAG orchestrator.
-Lebur dari modul_a3/prompt_engineering.py (routing konteks) + modul_a3/use_case.py (alur).
-Sumber: kontribusi modul_a3 (anggota tim) — disatukan di backend/pipeline/.
-"""
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from backend.config import DEFAULT_MODEL, SPARQL_PUBLIC_ENDPOINT
 from backend.llm.llm_models import LLMProvider
 from backend.logs.vector_store import search_logs
+from backend.patterns import LOG_KEYWORDS, MALWARE_KEYWORDS, THREAT_KEYWORDS, find_cve
 from backend.sparql.client import (PREFIXES, SPARQLConfig, VirtuosoClient, bindings_to_rows)
 from backend.sparql.nl2sparql import generate_sparql, run_kg_query
 from backend.threat.modul_threat import get_malware_context, get_threat_context
@@ -24,52 +20,46 @@ Jangan mengarang informasi di luar konteks.
 Berikan jawaban yang jelas, terstruktur, dan actionable.
 Jika data tidak tersedia, katakan dengan jujur."""
 
-THREAT_KEYWORDS = ["apt", "lazarus", "fancy bear", "cozy bear", "kimsuky", "sandworm", "carbanak", "fin7", "turla"]
-MALWARE_KEYWORDS = ["wannacry", "emotet", "mirai", "stuxnet", "notpetya", "ransomware", "trojan", "rootkit", "cobalt strike"]
-LOG_KEYWORDS = ["log", "ssh", "login", "failed", "connection", "brute", "intrusion", "anomali", "mencurigakan", "reverse shell", "port scan"]
-
-CVE_RE = re.compile(r"cve-\d{4}-\d+", re.IGNORECASE)
-
 def _local_name(uri: str) -> str:
     parts = re.split(r"[#/]", uri.rstrip("#/"))
     return parts[-1] if parts and parts[-1] else uri
 
+
 def query_router(mode: str, message: str) -> Dict[str, bool]:
-    """Tentukan sumber data yang dipakai berdasarkan mode + isi pertanyaan (Issue #04)."""
+    """Tentukan sumber data berdasarkan mode + isi pertanyaan (Issue #04)."""
     q = message.lower()
     want_kg = mode in ("threat_intelligence", "combined")
-    want_logs = mode == "log_analysis" or mode == "combined" \
-        or any(kw in q for kw in LOG_KEYWORDS)
+    want_logs = mode in ("log_analysis", "combined") or any(kw in q for kw in LOG_KEYWORDS)
     return {"kg": want_kg, "logs": want_logs}
 
 
 def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
-    """Ambil relasi CVE dari endpoint SEPSES publik untuk visualisasi graph."""
+    """Relasi CVE dari endpoint SEPSES publik untuk visualisasi graph (Issue #03)."""
     try:
-
-
-        client = VirtuosoClient(SPARQLConfig(
-            endpoint=SPARQL_PUBLIC_ENDPOINT, default_graph=None, infer=False))
+        client = VirtuosoClient(
+            SPARQLConfig(endpoint=SPARQL_PUBLIC_ENDPOINT, default_graph=None, infer=False)
+        )
         query = f"""{PREFIXES}
         SELECT ?p ?o WHERE {{
             ?cve cve:id "{cve_id}" .
             ?cve ?p ?o .
         }} LIMIT {int(limit)}"""
         rows = bindings_to_rows(client.run_query(query, default_graph=None, infer=False))
-        
         return [
-            {"subject": cve_id, "predicate": _local_name(r.get("p", "")),
-             "object": _local_name(r.get("o", "")), "source": SPARQL_PUBLIC_ENDPOINT}
+            {
+                "subject": cve_id,
+                "predicate": _local_name(r.get("p", "")),
+                "object": _local_name(r.get("o", "")),
+                "source": SPARQL_PUBLIC_ENDPOINT,
+            }
             for r in rows
         ]
     except Exception:
         return []
 
+
 def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
-    """
-    Retrieval dari knowledge graph (Issue #03).
-    Mengembalikan: konteks teks, triples, sources, sparql, method.
-    """
+    """Retrieval dari knowledge graph (Issue #03): konteks, triples, sources, sparql, method."""
     parts: List[str] = []
     sources: List[str] = []
     triples: List[Dict[str, str]] = []
@@ -78,10 +68,9 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
 
     q = message.lower()
 
-    # --- Enrichment human-readable untuk pola yang dikenal ---
-    cve_match = CVE_RE.search(message)
-    if cve_match:
-        cve_id = cve_match.group().upper()
+    # --- Enrichment human-readable untuk pola yang dikenal (regex/keyword default) ---
+    cve_id = find_cve(message)
+    if cve_id:
         try:
             parts.append(get_vuln_context(cve_id))
             sources.append(SPARQL_PUBLIC_ENDPOINT)
@@ -89,19 +78,17 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
             parts.append(f"[vuln lookup gagal: {e}]")
         triples.extend(_cve_triples(cve_id))
 
-    for kw in THREAT_KEYWORDS:
-        if kw in q:
-            parts.append(get_threat_context(kw))
-            sources.append("MITRE ATT&CK")
-            break
+    if any(kw in q for kw in THREAT_KEYWORDS):
+        kw = next(kw for kw in THREAT_KEYWORDS if kw in q)
+        parts.append(get_threat_context(kw))
+        sources.append("MITRE ATT&CK")
 
-    for kw in MALWARE_KEYWORDS:
-        if kw in q:
-            parts.append(get_malware_context(kw))
-            sources.append("MITRE ATT&CK")
-            break
+    if any(kw in q for kw in MALWARE_KEYWORDS):
+        kw = next(kw for kw in MALWARE_KEYWORDS if kw in q)
+        parts.append(get_malware_context(kw))
+        sources.append("MITRE ATT&CK")
 
-    # --- NL2SPARQL: jalur generik (regex fast-path di dalamnya, lalu LLM) ---
+    # --- NL2SPARQL: jalur generik (regex fast-path lalu LLM) ---
     try:
         sparql_used, method = generate_sparql(message, model=model)
         rows = run_kg_query(sparql_used)
@@ -124,7 +111,7 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
 
 def _history_messages(history: Optional[List[Dict[str, str]]]):
     msgs = []
-    for item in (history or []):
+    for item in history or []:
         role = (item.get("role") or "").lower()
         content = item.get("content") or ""
         if not content:
@@ -136,9 +123,12 @@ def _history_messages(history: Optional[List[Dict[str, str]]]):
     return msgs
 
 
-def answer(message: str, mode: str = "threat_intelligence",
-           model: str = DEFAULT_MODEL,
-           history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+def answer(
+    message: str,
+    mode: str = "threat_intelligence",
+    model: str = DEFAULT_MODEL,
+    history: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
     route = query_router(mode, message)
 
     parts: List[str] = []
@@ -167,8 +157,10 @@ def answer(message: str, mode: str = "threat_intelligence",
     if context:
         user_msg = f"Konteks data keamanan:\n{context}\n\nPertanyaan: {message}"
     else:
-        user_msg = (f"Pertanyaan: {message}\n"
-                    "(Tidak ada data spesifik ditemukan di knowledge graph untuk pertanyaan ini.)")
+        user_msg = (
+            f"Pertanyaan: {message}\n"
+            "(Tidak ada data spesifik ditemukan di knowledge graph untuk pertanyaan ini.)"
+        )
 
     try:
         llm = LLMProvider.get_model(model)
@@ -185,7 +177,7 @@ def answer(message: str, mode: str = "threat_intelligence",
         "triples": triples,
         "llmUsed": model,
         "sources": list(dict.fromkeys(sources)),
-        "method": method,     # explainability: regex | llm | None
+        "method": method,      # explainability: regex | llm | None
         "sparql": sparql_used,
     }
 

@@ -1,21 +1,19 @@
+import os
 from typing import Any, Dict, List, Optional
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-from backend.config import DEFAULT_MODEL
+from backend.config import DEFAULT_MODEL, SUPPORTED_MODEL_NAMES
 from backend.pipeline.orchestrator import answer
 
 app = FastAPI(title="SEPSES CSKG Chatbot API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+_origins = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000").split(",")
+app.add_middleware(CORSMiddleware,
+    allow_origins=[o.strip() for o in _origins if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 class HistoryItem(BaseModel):
     role: str
@@ -55,6 +53,9 @@ def root() -> Dict[str, str]:
 def health() -> Dict[str, str]:
     return {"status": "ok"}
 
+@app.get("/api/models")
+def models() -> Dict[str, Any]:
+    return {"models": list(SUPPORTED_MODEL_NAMES), "default": DEFAULT_MODEL}
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> Dict[str, Any]:

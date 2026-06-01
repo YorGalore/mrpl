@@ -1,30 +1,20 @@
 from __future__ import annotations
-
-import re
 from typing import Dict
 
 from backend.logs.vector_store import search_logs
-from backend.pipeline.orchestrator import (LOG_KEYWORDS, MALWARE_KEYWORDS, SYSTEM_PROMPT, THREAT_KEYWORDS)
+from backend.patterns import (LOG_KEYWORDS, MALWARE_KEYWORDS, SYSTEM_PROMPT, THREAT_KEYWORDS)
+from backend.pipeline.orchestrator import SYSTEM_PROMPT
 from backend.threat.modul_threat import get_malware_context, get_threat_context
 from backend.threat.modul_vulnerability import get_vuln_context
-
-CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
-
-# System prompt untuk LLM
-SYSTEM_PROMPT = """Kamu adalah analis keamanan siber yang ahli.
-Jawab pertanyaan pengguna HANYA berdasarkan konteks data yang diberikan.
-Jangan mengarang informasi di luar konteks.
-Berikan jawaban yang jelas, terstruktur, dan actionable.
-Jika data tidak tersedia, katakan dengan jujur."""
 
 def build_prompt(user_question: str) -> Dict[str, str]:
     """Deteksi jenis pertanyaan, ambil konteks relevan, bangun prompt siap kirim."""
     q = user_question.lower()
     context = ""
 
-    cve_match = CVE_RE.search(user_question)
-    if cve_match:
-        context += get_vuln_context(cve_match.group().upper())
+    cve_id = find_cve(user_question)
+    if cve_id:
+        context += get_vuln_context(cve_id)
 
     for kw in THREAT_KEYWORDS:
         if kw in q:
