@@ -24,4 +24,7 @@ virtuoso-data/virtuoso-data/
 .idea/
 .vscode/
 
+.venv/
+venv/
+
 
