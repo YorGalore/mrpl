@@ -1,7 +1,6 @@
 from __future__ import annotations
-
-import os
 import json
+import ssl
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional, List
 
@@ -10,6 +9,7 @@ from backend.config import(
     SPARQL_ENDPOINT as DEFAULT_ENDPOINT,
     DEFAULT_GRAPH, SPARQL_TIMEOUT as DEFAULT_TIMEOUT
 )
+ssl._create_default_https_context = ssl._create_unverified_context
 
 PREFIXES = """\
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -42,17 +42,6 @@ def escape_sparql_literal(value: str) -> str:
 def normalize_iri(iri: str) -> str:
     return iri.strip().strip("<>").replace(">", "")
 
-def sparql_term(term: str) -> str:
-    term = term.strip()
-
-    if term.startswith("<") and term.endswith(">"):
-        return term
-
-    if term.startswith("http://") or term.startswith("https://"):
-        return f"<{normalize_iri(term)}>"
-
-    return term
-
 @dataclass(frozen=True)
 class SPARQLConfig:
     endpoint: str = DEFAULT_ENDPOINT
@@ -60,10 +49,8 @@ class SPARQLConfig:
     default_graph: str = DEFAULT_GRAPH
     infer: bool = True
 
-
 class VirtuosoClient:
-
-
+    
     def __init__(self, config: Optional[SPARQLConfig] = None):
         self.config = config or SPARQLConfig()
 
@@ -98,9 +85,7 @@ class VirtuosoClient:
         except Exception as exc:  # pragma: no cover - endpoint/network failures
             raise SPARQLClientError(f"SPARQL query failed: {exc}") from exc
 
-
 _client = VirtuosoClient()
-
 
 def run_query(
     query_text: str,
@@ -118,9 +103,17 @@ def bindings_to_rows(result: Dict[str, Any]) -> List[Dict[str, str]]:
         rows.append(row)
     return rows
 
-
 def pretty_print_rows(rows: Iterable[Dict[str, str]]) -> str:
     return json.dumps(list(rows), indent=2, ensure_ascii=False)
+
+def sparql_term(term: str) -> str:
+    term = term.strip()
+    if term.startswith("<") and term.endswith(">"):
+        return term
+    if term.startswith("http://") or term.startswith("https://"):
+        return f"<{normalize_iri(term)}>"
+    return term
+
 
 def _graph_clause(graph_uri: Optional[str], triple_pattern: str) -> str:
     if graph_uri:
@@ -140,7 +133,6 @@ def list_named_graphs(limit: int = 100) -> Dict[str, Any]:
     """
     return run_query(query, default_graph=None)
 
-
 def count_triples(*, graph_uri: Optional[str] = None) -> Dict[str, Any]:
     where_clause = _graph_clause(graph_uri, "?s ?p ?o .")
     query = f"""
@@ -152,16 +144,12 @@ def count_triples(*, graph_uri: Optional[str] = None) -> Dict[str, Any]:
     """
     return run_query(query, default_graph=graph_uri)
 
-def count_entities(*, graph_uri: Optional[str] = None) -> Dict[str, Any]:
-    where_clause = _graph_clause(graph_uri, "?s ?p ?o .")
-    query = f"""
-    {PREFIXES}
+def count_distinct_entities(*, graph_uri: Optional[str] = None) -> Dict[str, Any]:
+    query = f"""{PREFIXES}
     SELECT (COUNT(DISTINCT ?s) AS ?subjects) (COUNT(DISTINCT ?o) AS ?objects)
-    WHERE {{
-        {where_clause}
-    }}
-    """
+    WHERE {{ {_graph_clause(graph_uri, "?s ?p ?o .")} }}"""
     return run_query(query, default_graph=graph_uri)
+count_entities = count_distinct_entities
 
 def list_classes(*, graph_uri: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
     where_clause = _graph_clause(graph_uri, "?s rdf:type ?class .")
@@ -232,101 +220,6 @@ def search_labels(
     return run_query(query, default_graph=graph_uri)
 
 
-def describe_entity(entity_iri: str, *, graph_uri: Optional[str] = None) -> Dict[str, Any]:
-    safe_iri = normalize_iri(entity_iri)
-    if graph_uri:
-        query_body = f"""
-        {{
-            BIND(<{safe_iri}> AS ?s)
-            GRAPH <{normalize_iri(graph_uri)}> {{ ?s ?p ?o . }}
-            BIND("outgoing" AS ?direction)
-        }}
-        UNION
-        {{
-            BIND(<{safe_iri}> AS ?o)
-            GRAPH <{normalize_iri(graph_uri)}> {{ ?s ?p ?o . }}
-            BIND("incoming" AS ?direction)
-        }}
-        """
-    else:
-        query_body = f"""
-        {{
-            BIND(<{safe_iri}> AS ?s)
-            ?s ?p ?o .
-            BIND("outgoing" AS ?direction)
-        }}
-        UNION
-        {{
-            BIND(<{safe_iri}> AS ?o)
-            ?s ?p ?o .
-            BIND("incoming" AS ?direction)
-        }}
-        """
-    query = f"""
-    {PREFIXES}
-    SELECT ?p ?o ?direction
-    WHERE {{
-        {query_body}
-    }}
-    LIMIT 200
-    """
-    return run_query(query, default_graph=graph_uri)
-
-def describe_entity_neighbors(
-    entity_iri: str,
-    *,
-    graph_uri: Optional[str] = None,
-    limit: int = 50,
-) -> Dict[str, Any]:
-    safe_iri = normalize_iri(entity_iri)
-    if graph_uri:
-        query = f"""
-        {PREFIXES}
-        SELECT ?direction ?neighbor ?predicate ?predicateLabel
-        WHERE {{
-            {{
-                BIND("outgoing" AS ?direction)
-                BIND(<{safe_iri}> AS ?entity)
-                GRAPH <{normalize_iri(graph_uri)}> {{
-                    ?entity ?predicate ?neighbor .
-                    OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
-                }}
-            }}
-            UNION
-            {{
-                BIND("incoming" AS ?direction)
-                BIND(<{safe_iri}> AS ?entity)
-                GRAPH <{normalize_iri(graph_uri)}> {{
-                    ?neighbor ?predicate ?entity .
-                    OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
-                }}
-            }}
-        }}
-        LIMIT {int(limit)}
-        """
-    else:
-        query = f"""
-        {PREFIXES}
-        SELECT ?direction ?neighbor ?predicate ?predicateLabel
-        WHERE {{
-            {{
-                BIND("outgoing" AS ?direction)
-                BIND(<{safe_iri}> AS ?entity)
-                ?entity ?predicate ?neighbor .
-                OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
-            }}
-            UNION
-            {{
-                BIND("incoming" AS ?direction)
-                BIND(<{safe_iri}> AS ?entity)
-                ?neighbor ?predicate ?entity .
-                OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
-            }}
-        }}
-        LIMIT {int(limit)}
-        """
-    return run_query(query, default_graph=graph_uri)
-
 def count_instances_of(class_term: str, *, graph_uri: Optional[str] = None) -> Dict[str, Any]:
     class_ref = sparql_term(class_term)
     where_clause = _graph_clause(graph_uri, f"?entity a {class_ref} .")
@@ -376,19 +269,20 @@ def count_predicate_usage(predicate_term: str, *, graph_uri: Optional[str] = Non
     """
     return run_query(query, default_graph=graph_uri)
 
-def count_distinct_entities(*, graph_uri: Optional[str] = None) -> Dict[str, Any]:
-    where_clause = _graph_clause(graph_uri, "?s ?p ?o .")
-    query = f"""
-    {PREFIXES}
-    SELECT (COUNT(DISTINCT ?s) AS ?subjects) (COUNT(DISTINCT ?o) AS ?objects)
-    WHERE {{
-        {where_clause}
-    }}
-    """
+def describe_entity_neighbors(entity_iri: str, *, graph_uri: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
+    safe = normalize_iri(entity_iri)
+    out = _graph_clause(graph_uri, "?entity ?predicate ?neighbor . OPTIONAL { ?predicate rdfs:label ?predicateLabel . }")
+    inc = _graph_clause(graph_uri, "?neighbor ?predicate ?entity . OPTIONAL { ?predicate rdfs:label ?predicateLabel . }")
+    query = f"""{PREFIXES}
+    SELECT ?direction ?neighbor ?predicate ?predicateLabel WHERE {{
+      {{ BIND("outgoing" AS ?direction) BIND(<{safe}> AS ?entity) {out} }}
+      UNION
+      {{ BIND("incoming" AS ?direction) BIND(<{safe}> AS ?entity) {inc} }}
+    }} LIMIT {int(limit)}"""
     return run_query(query, default_graph=graph_uri)
 
 
 if __name__ == "__main__":
-    result = sample_triples(graph_uri=DEFAULT_GRAPH, limit=10)
-    rows = bindings_to_rows(result)
-    print(pretty_print_rows(rows))
+    q = f"""{PREFIXES}
+SELECT ?cveId WHERE {{ ?cve cve:id ?cveId . }} LIMIT 5"""
+    print(pretty_print_rows(bindings_to_rows(run_query(q))))

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-DEFAULT_SCHEMA_JSON = Path(__file__).resolve().parents[3] / "docs" / "knowledge_graph_schema.json"
+DEFAULT_SCHEMA_JSON = (Path(__file__).resolve().parents[2] / "docs" / "knowledge_graph_schema.json")
 
 FALLBACK_CONTEXT = """\
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -18,9 +18,7 @@ PREFIX vuln: <http://w3id.org/sepses/vocab/vulnerability#>
 PREFIX cpe: <http://w3id.org/sepses/vocab/ref/cpe#>
 PREFIX cvss: <http://w3id.org/sepses/vocab/ref/cvss#>
 
-DATA LOCATION:
-- capec / cwe / snortrule  -> Virtuoso lokal
-- cve / cvss / cpe         -> endpoint publik SEPSES (data lengkap)
+DATA SOURCE: SEPSES public SPARQL endpoint (CVE/CWE/CAPEC/CPE/CVSS lengkap).
 
 KEY CLASSES:
 - cve:CVE
@@ -31,37 +29,22 @@ KEY CLASSES:
 - vuln:Vulnerability
 - cpe:CPE
 - cvss:CVSS
+- cvss:CVSS3 / cvss:CVSS2
 
 KEY PROPERTIES:
-- cve:id                  (string id, mis. "CVE-2021-44228")
-- cve:description
-- cve:publishedDate
-- cve:hasCWE
-- cve:hasCPE
-- cve:hasCAPEC
-- cve:hasCVSS
-- cve:hasCPE              (CVE -> CPE)
-- cve:hasCVSS2BaseMetric  (CVE -> CVSS2)
-- cve:hasCVSS3BaseMetric  (CVE -> CVSS3)
-- cvss:baseScore
-- cvss:confidentialityImpact
-- cwe:name
-- cwe:description
-- cwe:hasCAPEC
-- cwe:hasCommonConsequence
-- capec:name
-- capec:description
-- capec:mitigation
-- attack:targets
-- attack:uses
-- vuln:severity
-- vuln:relatedTo
+- cve:id (string id, mis. "CVE-2021-44228"), cve:description, cve:publishedDate, cve:hasCWE, cve:hasCPE
+- cve:hasCAPEC, cve:hasCVSS, cve:hasCVSS2BaseMetric, cve:hasCVSS3BaseMetric  
+- cvss:baseScore, cvss:confidentialityImpact, cvss:attackVecktor
+- cwe:name, cwe:description, cwe:hasCAPEC, cwe:hasCommonConsequence
+- capec:name, capec:description, capec:mitigation
+- attack:targets, attack:uses
+- vuln:severity, vuln:relatedTo
 
 COMMON QUERY SHAPES:
-1. CVE lookup by ID:  ?cve cve:id "CVE-2021-44228" ; cve:description ?description .
-2. CVE -> CWE:        ?cve cve:id ?id ; cve:hasCWE ?cwe .
-3. CVE -> CVSS score: ?cve cve:id ?id ; cve:hasCVSS3BaseMetric ?m . ?m cvss:baseScore ?score .
-4. CWE -> CAPEC:      ?cwe cwe:hasCAPEC ?capec . ?capec capec:name ?name .
+1. CVE detail:  ?cve cve:id "CVE-2021-44228" ; cve:description ?d .
+2. CVE -> CWE:  ?cve cve:id ?id ; cve:hasCWE ?cwe . ?cwe cwe:name ?n .
+3. CVE -> CVSS: ?cve cve:hasCVSS3BaseMetric ?m . ?m cvss:baseScore ?s .
+4. CWE -> CAPEC: ?cwe cwe:hasCAPEC ?capec . ?capec capec:name ?name .
 """
 
 def _safe_read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -95,33 +78,30 @@ def build_ontology_context(schema_json_path: Path = DEFAULT_SCHEMA_JSON) -> str:
     data = _safe_read_json(schema_json_path)
     if not data:
         return FALLBACK_CONTEXT.strip()
+    
+    graphs_report: List[Dict[str, Any]] = data.get("graphs_report", []) or []
+    if not graphs_report:
+        return FALLBACK_CONTEXT.strip()
 
     lines = [FALLBACK_CONTEXT.strip(), "", "DISCOVERED GRAPH SUMMARY:",
              f"- Graph count: {data.get('graph_count', 'n/a')}", ""]
 
     first_graph = graphs_report[0]
-    lines.extend(
-        [
-            "TOP CLASSES:",
-            _format_table(first_graph.get("top_classes", []), ["class", "count"], limit=10),
-            "",
-            "TOP PREDICATES:",
-            _format_table(first_graph.get("top_predicates", []), ["predicate", "count"], limit=10),
-            "",
-            "CURATED CLASSES:",
-            _format_table(first_graph.get("curated_classes", []), ["class", "label", "count"], limit=10),
-            "",
-            "CURATED RELATIONS:",
-            _format_table(first_graph.get("curated_relations", []), ["predicate", "label", "count"], limit=10),
-            "",
-            "COMMON QUERY SHAPES:",
-            '1. CVE lookup by ID: ?cve cve:cveId "CVE-2021-44228" ; cve:description ?description .',
-            "2. CVE -> CWE: ?cve cve:cveId ?cveId ; cve:hasCWE ?cwe .",
-            "3. CVE -> CAPEC: ?cve cve:cveId ?cveId ; cve:hasCAPEC ?capec .",
-            "4. CVE -> CPE: ?cve cve:cveId ?cveId ; cve:hasCPE ?cpe .",
-        ]
-    )
-    
+    lines = [
+        FALLBACK_CONTEXT.strip(),
+        "",
+        "DISCOVERED GRAPH SUMMARY:",
+        f"- Graph count: {data.get('graph_count', 'n/a')}",
+        "",
+        "TOP CLASSES:",
+        _format_table(first_graph.get("top_classes", []), ["class", "count"]),
+        "",
+        "TOP PREDICATES:",
+        _format_table(first_graph.get("top_predicates", []), ["predicate", "count"]),
+        "",
+        "CURATED CLASSES:",
+        _format_table(first_graph.get("curated_classes", []), ["class", "label", "count"]),
+    ]
     return "\n".join(lines).strip()
 
 def ontology_summary() -> str:

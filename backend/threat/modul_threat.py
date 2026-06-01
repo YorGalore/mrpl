@@ -24,13 +24,12 @@ def _resolve_dataset_path() -> Path:
 @lru_cache(maxsize=1)
 #ditambah
 def _get_mitre() -> MitreAttackData:
-    """Load + cache dataset MITRE sekali saja per proses."""
     return MitreAttackData(str(_resolve_dataset_path()))
 
 def get_threat_context(actor_keyword: str) -> str:
     try:
+        mitre = _get_mitre()  
         groups = mitre.get_groups()
-        hasil = []
         for group in groups:
             name = group.get("name", "")
             aliases = group.get("aliases", [])
@@ -55,6 +54,7 @@ def get_threat_context(actor_keyword: str) -> str:
 
 def get_malware_context(malware_keyword: str) -> str:
     try:
+        mitre = _get_mitre()
         softwares = mitre.get_software()
         hasil = []
         for sw in softwares:

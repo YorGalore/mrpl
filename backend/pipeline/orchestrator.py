@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-
+from typing import Any, Dict, List, Optional
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from backend.config import DEFAULT_MODEL, SPARQL_PUBLIC_ENDPOINT
 from backend.llm.llm_models import LLMProvider
 from backend.logs.vector_store import search_logs
 from backend.patterns import LOG_KEYWORDS, MALWARE_KEYWORDS, THREAT_KEYWORDS, find_cve
-from backend.sparql.client import (PREFIXES, SPARQLConfig, VirtuosoClient, bindings_to_rows)
+from backend.pipeline.prompts import system_prompt_for
+from backend.sparql.client import PREFIXES, SPARQLConfig, VirtuosoClient, bindings_to_rows
+from backend.sparql.graph_context import build_attack_chain_context
 from backend.sparql.nl2sparql import generate_sparql, run_kg_query
 from backend.threat.modul_threat import get_malware_context, get_threat_context
 from backend.threat.modul_vulnerability import get_vuln_context
-
-SYSTEM_PROMPT = """Kamu adalah analis keamanan siber yang ahli.
-Jawab pertanyaan pengguna HANYA berdasarkan konteks data yang diberikan.
-Jangan mengarang informasi di luar konteks.
-Berikan jawaban yang jelas, terstruktur, dan actionable.
-Jika data tidak tersedia, katakan dengan jujur."""
 
 def _local_name(uri: str) -> str:
     parts = re.split(r"[#/]", uri.rstrip("#/"))
@@ -31,7 +26,6 @@ def query_router(mode: str, message: str) -> Dict[str, bool]:
     want_kg = mode in ("threat_intelligence", "combined")
     want_logs = mode in ("log_analysis", "combined") or any(kw in q for kw in LOG_KEYWORDS)
     return {"kg": want_kg, "logs": want_logs}
-
 
 def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
     """Relasi CVE dari endpoint SEPSES publik untuk visualisasi graph (Issue #03)."""
@@ -57,7 +51,6 @@ def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
     except Exception:
         return []
 
-
 def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
     """Retrieval dari knowledge graph (Issue #03): konteks, triples, sources, sparql, method."""
     parts: List[str] = []
@@ -73,6 +66,7 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
     if cve_id:
         try:
             parts.append(get_vuln_context(cve_id))
+            parts.append(build_attack_chain_context(cve_id))
             sources.append(SPARQL_PUBLIC_ENDPOINT)
         except Exception as e:
             parts.append(f"[vuln lookup gagal: {e}]")
@@ -130,7 +124,6 @@ def answer(
     history: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     route = query_router(mode, message)
-
     parts: List[str] = []
     sources: List[str] = []
     triples: List[Dict[str, str]] = []
