@@ -50,6 +50,7 @@ The chatbot supports cybersecurity question-answering, threat actor analysis, ma
 ## Environment Setup
 ### Clone Repository
 git clone https://github.com/Software-Engineering-2026-Class/Kel9-LLM-Chatbot-SEPSESCSKG.git
+
 cd Kel9-LLM-Chatbot-SEPSESCSKG
 
 ### Install Dependencies
