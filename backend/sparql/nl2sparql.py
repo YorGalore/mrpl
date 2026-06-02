@@ -68,15 +68,15 @@ SELECT DISTINCT ?cweName ?capecName ?mitigation WHERE {{
   OPTIONAL {{ ?cwe cwe:hasCAPEC ?capec . ?capec capec:name ?capecName .
              OPTIONAL {{ ?capec capec:mitigation ?mitigation . }} }}
 }} LIMIT 50"""
-
-
+ 
+ 
 def _cve_products(cve_id: str) -> str:
     return f"""{PREFIXES}
 SELECT DISTINCT ?cpe WHERE {{
   ?cve cve:id "{cve_id}" ; cve:hasCPE ?cpe .
 }} LIMIT 30"""
-
-
+ 
+ 
 def _cves_by_cwe(cwe_id: str) -> str:
     return f"""{PREFIXES}
 SELECT DISTINCT ?cveId WHERE {{
@@ -88,7 +88,7 @@ SELECT DISTINCT ?cveId WHERE {{
 def regex_sparql(question: str) -> Optional[str]:
     """Fast-path tanpa LLM. None bila tak ada pola dikenal."""
     q = question.lower()
-
+ 
     cve = CVE_RE.search(question)
     if cve:
         cid = cve.group().upper()
@@ -99,11 +99,11 @@ def regex_sparql(question: str) -> Optional[str]:
         if any(k in q for k in ("produk", "product", "cpe", "software", "terdampak", "affected")):
             return _cve_products(cid)
         return _cve_full(cid)
-
+ 
     cwe = _CWE_RE.search(question)
     if cwe:
         return _cves_by_cwe(cwe.group().upper())
-
+ 
     return None
     
 
@@ -113,8 +113,8 @@ def llm_generate(question: str, model: str = DEFAULT_MODEL) -> str:
     chain = prompt | llm
     response = chain.invoke({"ontology": ONTOLOGY_CONTEXT, "question": question})
     return response.content.strip()
-
-
+ 
+ 
 def extract_sparql(text: str) -> str:
     match = re.search(r"```(?:sparql)?\s*([\s\S]+?)```", text, re.IGNORECASE)
     query = match.group(1).strip() if match else text.strip()
@@ -122,8 +122,8 @@ def extract_sparql(text: str) -> str:
     if "PREFIX" not in query.upper():
         query = f"{PREFIXES}\n{query}"
     return query
-
-
+ 
+ 
 def validate_sparql(query: str) -> bool:
     upper = query.upper()
     if _FORBIDDEN.search(query):
@@ -138,7 +138,7 @@ def generate_sparql(question: str, model: str = DEFAULT_MODEL) -> Tuple[str, str
     q = regex_sparql(question)
     if q:
         return q, "regex"
-
+ 
     try:
         raw = llm_generate(question, model=model)
         q = extract_sparql(raw)
@@ -158,16 +158,16 @@ def generate_sparql(question: str, model: str = DEFAULT_MODEL) -> Tuple[str, str
             }} ORDER BY DESC(?score) LIMIT 10""",
         "fallback",
     )
-
+ 
 def run_kg_query(query: str) -> List[Dict[str, str]]:
     """Eksekusi pada endpoint publik (jalur utama).
     SPARQLConfig sekarang public-safe (default_graph=None, infer=False) sehingga
     query tidak lagi dipaksa ke graph kosong. Bila publik gagal, client otomatis
     mencoba Virtuoso lokal (lihat backend/sparql/client.run_query)."""
 
-    client = VirtuosoClient(SPARQLConfig(endpoint=SPARQL_PUBLIC_ENDPOINT, timeout=SPARQL_TIMEOUT))
+    client = VirtuosoClient(
+        SPARQLConfig(endpoint=SPARQL_PUBLIC_ENDPOINT, timeout=SPARQL_TIMEOUT, infer=False))
     return bindings_to_rows(client.run_query(query))
-
 
 def execute_question(question: str, model: str = DEFAULT_MODEL) -> dict:
     sparql_query, method = generate_sparql(question, model=model)

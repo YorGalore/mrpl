@@ -86,6 +86,7 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
 
     # --- Enrichment human-readable untuk pola yang dikenal (regex/keyword default) ---
     cve_id = find_cve(message)
+    cwe_id = find_cwe(message)
     if cve_id:
         try:
             parts.append(get_vuln_context(cve_id))
@@ -94,7 +95,7 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
         except Exception as e:
             parts.append(f"[vuln lookup gagal: {e}]")
         triples.extend(_cve_triples(cve_id))
-        cwe_id = find_cwe(message)
+        
     if cwe_id and not cve_id:
         triples.extend(_cwe_triples(cwe_id))
         sources.append(SPARQL_PUBLIC_ENDPOINT)

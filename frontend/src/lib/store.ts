@@ -8,7 +8,7 @@ interface ChatStore {
   activeSessionId: string | null;
   currentMode: AnalysisMode;
   currentModel: string;
-  availableModels: [];
+  availableModels: string[];
   isLoading: boolean;
   isGraphViewerOpen: boolean;
   selectedMessage: Message | null;
@@ -34,6 +34,7 @@ export const useChatStore = create<ChatStore>()(
       activeSessionId: null,
       currentMode: "threat_intelligence",
       currentModel: "",
+      availableModels: [],
       isLoading: false,
       isGraphViewerOpen: false,
       selectedMessage: null,
@@ -110,12 +111,12 @@ export const useChatStore = create<ChatStore>()(
           isGraphViewerOpen: message ? true : !s.isGraphViewerOpen,
           selectedMessage: message ?? s.selectedMessage,
         })),
-
+ 
       getActiveSession: () => {
         const { sessions, activeSessionId } = get();
         return sessions.find((s) => s.id === activeSessionId) ?? null;
       },
-
+      
       clearAllSessions: () =>
         set({ sessions: [], activeSessionId: null }),
     }),
