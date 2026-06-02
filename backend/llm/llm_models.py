@@ -7,8 +7,6 @@ from langchain_core.callbacks.manager import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage,)
 from langchain_core.outputs import ChatGeneration, ChatResult
-
-from langchain_ollama import ChatOllama
  
 from backend.config import (
     DEFAULT_MODEL,
@@ -19,6 +17,8 @@ from backend.config import (
     OPENROUTER_SITE_URL,
     OPENROUTER_APP_NAME,
     OLLAMA_BASE_URL,
+    OLLAMA_NUM_PREDICT,
+    OLLAMA_NUM_CTX,
     LLM_TIMEOUT,
 )
 
@@ -82,8 +82,27 @@ class ChatOpenRouter(BaseChatModel):
             headers.update(self.extra_headers)
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
-        resp = requests.post(url, json=body, headers=headers, timeout=self.timeout)
-        resp.raise_for_status()
+        try:
+            resp = requests.post(url, json=body, headers=headers, timeout=self.timeout)
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", "?")
+            if status in (401, 403):
+                raise RuntimeError(
+                    "OpenRouter menolak request (HTTP 401/403): OPENROUTER_API_KEY kosong/tidak valid. "
+                    "Model OpenRouter adalah salah satu dari dua model yang dibandingkan, jadi isi "
+                    "OPENROUTER_API_KEY yang benar di file .env agar model ini ikut dievaluasi "
+                    "(model Ollama berjalan independen dan tidak terpengaruh)."
+                ) from e
+            if status == 402:
+                raise RuntimeError(
+                    "OpenRouter HTTP 402: kredit/kuota model ini habis. "
+                    "Coba model ':free' lain atau gunakan 'ollama:...'."
+                ) from e
+            raise RuntimeError(f"OpenRouter HTTP {status}: {e}") from e
+        except requests.RequestException as e:
+            raise RuntimeError(f"Gagal menghubungi OpenRouter: {e}") from e
+
         data = resp.json()
 
         if data.get("error"):
@@ -103,6 +122,7 @@ class ChatOpenRouter(BaseChatModel):
             generations=[generation],
             llm_output={"model_name": data.get("model", self.model_name), "usage": usage},
         )
+    
 
 def _split_provider(model_name: str):
     """Kembalikan (provider | None, model_id)."""
@@ -144,12 +164,14 @@ def _build(provider: str, model_id: str):
             extra_headers=headers or None,
         )
 
-    if provider == "ollama":        
+    if provider == "ollama":
         return ChatOllama(
             model=model_id,
             temperature=0,
-            api_key="ollama",
             base_url=_normalize_ollama_base_url(OLLAMA_BASE_URL),
+            num_predict=OLLAMA_NUM_PREDICT,
+            num_ctx=OLLAMA_NUM_CTX,
+            client_kwargs={"timeout": LLM_TIMEOUT},
         )
 
     raise ValueError(f"Provider LLM tidak dikenal: {provider}")

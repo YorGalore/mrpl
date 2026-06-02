@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from backend.config import DEFAULT_MODEL, SUPPORTED_MODEL_NAMES
-from backend.pipeline.orchestrator import answer
+from backend.pipeline.orchestrator import answer, compare
 
 app = FastAPI(title="SEPSES CSKG Chatbot API")
 
@@ -43,6 +43,31 @@ class ChatResponse(BaseModel):
     method: Optional[str] = None      # regex | llm | None  (explainability)
     sparql: Optional[str] = None      # query SPARQL yang dipakai (jika ada)
 
+class CompareRequest(BaseModel):
+    message: str
+    mode: str = "threat_intelligence"
+    sessionId: Optional[str] = None
+    history: List[HistoryItem] = []
+    models: Optional[List[str]] = None   # default: semua model yang didukung (2 LLM)
+
+
+class CompareAnswer(BaseModel):
+    model: str
+    llmUsed: Optional[str] = None
+    message: str
+    ok: bool = True
+    error: Optional[str] = None
+    latencySec: Optional[float] = None
+
+
+class CompareResponse(BaseModel):
+    question: str
+    mode: str
+    answers: List[CompareAnswer] = []
+    triples: List[RDFTriple] = []
+    sources: List[str] = []
+    method: Optional[str] = None
+    sparql: Optional[str] = None
 
 @app.get("/")
 def root() -> Dict[str, str]:
@@ -60,3 +85,13 @@ def models() -> Dict[str, Any]:
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> Dict[str, Any]:
     return answer(req.message, mode=req.mode, model=req.model or DEFAULT_MODEL,history=[h.model_dump() for h in req.history],)
+
+
+@app.post("/api/compare", response_model=CompareResponse)
+def compare_models(req: CompareRequest) -> Dict[str, Any]:
+    return compare(
+        req.message,
+        models=req.models or list(SUPPORTED_MODEL_NAMES),
+        mode=req.mode,
+        history=[h.model_dump() for h in req.history],
+    )

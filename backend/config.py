@@ -11,8 +11,10 @@ OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "")
 OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "SEPSES CSKG Chatbot")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "1024"))
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "20"))
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "120"))
 
 
 def _parse_models(raw: "str | None") -> tuple:
@@ -22,7 +24,7 @@ _DEFAULT_MODELS = "openrouter:deepseek/deepseek-r1:free,ollama:llama3.2:3b"
 SUPPORTED_MODEL_NAMES = _parse_models(os.getenv("LLM_MODELS", _DEFAULT_MODELS)) or _parse_models(_DEFAULT_MODELS)
 
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL") or (
-    SUPPORTED_MODEL_NAMES[0] if SUPPORTED_MODEL_NAMES else "openrouter:deepseek/deepseek-r1:free"
+    SUPPORTED_MODEL_NAMES[0] if SUPPORTED_MODEL_NAMES else "ollama:llama3.2:3b"
 )
 
 SPARQL_PUBLIC_ENDPOINT = os.getenv("SEPSES_PUBLIC_ENDPOINT", "https://sepses.ifs.tuwien.ac.at/sparql")
