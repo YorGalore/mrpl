@@ -183,8 +183,11 @@ def answer(
             "(Tidak ada data spesifik ditemukan di knowledge graph untuk pertanyaan ini.)"
         )
 
+    resolved_model = model
     try:
         llm = LLMProvider.get_model(model)
+        # Bila model = auto-cheapest, tampilkan model nyata yang terpilih.
+        resolved_model = getattr(llm, "model_name", None) or model
         messages = [SystemMessage(content=system_prompt_for(mode))]
         messages.extend(_history_messages(history))
         messages.append(HumanMessage(content=user_msg))
@@ -196,7 +199,7 @@ def answer(
     return {
         "message": answer_text,
         "triples": triples,
-        "llmUsed": model,
+        "llmUsed": resolved_model,
         "sources": list(dict.fromkeys(sources)),
         "method": method,      # explainability: regex | llm | None
         "sparql": sparql_used,

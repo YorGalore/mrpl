@@ -5,20 +5,33 @@ load_dotenv()
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
 
-# --- OpenRouter (aggregator; 1 key untuk banyak model) ---
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-# Header opsional untuk ranking OpenRouter (boleh kosong).
 OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "")
 OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "SEPSES CSKG Chatbot")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+OPENROUTER_AUTO_CHEAPEST = "openrouter:auto-cheapest"
+OPENROUTER_CHEAPEST_FREE_ONLY = os.getenv("OPENROUTER_CHEAPEST_FREE_ONLY", "1").strip() not in (
+    "0", "false", "False", "",
+)
+OPENROUTER_PRICING_TTL = int(os.getenv("OPENROUTER_PRICING_TTL", "600"))
+OPENROUTER_SORT_BY_PRICE = os.getenv("OPENROUTER_SORT_BY_PRICE", "1").strip() not in (
+    "0", "false", "False", "",
+)
 
 def _parse_models(raw: "str | None") -> tuple:
     return tuple(m.strip() for m in (raw or "").split(",") if m.strip())
 
 _DEFAULT_MODELS = "meta-llama/llama-3.3-70b-instruct:free,deepseek/deepseek-r1:free"
 SUPPORTED_MODEL_NAMES = _parse_models(os.getenv("LLM_MODELS", _DEFAULT_MODELS)) or _parse_models(_DEFAULT_MODELS)
+
+# Munculkan opsi "auto-cheapest" di dropdown FE bila OpenRouter dikonfigurasi.
+if LLM_PROVIDER == "openrouter" or any(m.startswith("openrouter:") for m in SUPPORTED_MODEL_NAMES):
+    if OPENROUTER_AUTO_CHEAPEST not in SUPPORTED_MODEL_NAMES:
+        SUPPORTED_MODEL_NAMES = (OPENROUTER_AUTO_CHEAPEST, *SUPPORTED_MODEL_NAMES)
+
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL") or (
     SUPPORTED_MODEL_NAMES[0] if SUPPORTED_MODEL_NAMES else "meta-llama/llama-3.3-70b-instruct:free"
 )
