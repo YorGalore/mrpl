@@ -1,14 +1,110 @@
 from __future__ import annotations
-from backend.config import (
-    DEFAULT_MODEL, LLM_PROVIDER, SUPPORTED_MODEL_NAMES, OPENROUTER_API_KEY,
-    OPENROUTER_BASE_URL, OPENROUTER_SITE_URL, OPENROUTER_APP_NAME, OLLAMA_BASE_URL,
-    OPENROUTER_SORT_BY_PRICE,)
-from langchain_openai import ChatOpenAI
+ 
+from typing import Any, Dict, List, Optional
+ 
+import requests
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import (AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage,)
+from langchain_core.outputs import ChatGeneration, ChatResult
 
-# Token sentinel untuk "pilih model termurah otomatis" (mis. openrouter:auto-cheapest).
-_AUTO_CHEAPEST_ID = "auto-cheapest"
+from langchain_ollama import ChatOllama
+ 
+from backend.config import (
+    DEFAULT_MODEL,
+    LLM_PROVIDER,
+    SUPPORTED_MODEL_NAMES,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_SITE_URL,
+    OPENROUTER_APP_NAME,
+    OLLAMA_BASE_URL,
+    LLM_TIMEOUT,
+)
 
 _KNOWN_PROVIDERS = {"openrouter", "ollama"}
+
+class ChatOpenRouter(BaseChatModel):
+    model_name: str
+    api_key: str
+    base_url: str = "https://openrouter.ai/api/v1"
+    temperature: float = 0.0
+    timeout: int = 60
+    extra_headers: Optional[Dict[str, str]] = None
+
+    model_config = {"protected_namespaces": ()}
+ 
+    @property
+    def _llm_type(self) -> str:
+        return "openrouter-chat"
+ 
+    @property
+    def _identifying_params(self) -> Dict[str, Any]:
+        return {"model_name": self.model_name, "base_url": self.base_url}
+ 
+    @staticmethod
+    def _role_of(message: BaseMessage) -> str:
+        if isinstance(message, SystemMessage):
+            return "system"
+        if isinstance(message, AIMessage):
+            return "assistant"
+        if isinstance(message, ToolMessage):
+            return "tool"
+        return "user"  # HumanMessage & lainnya
+ 
+    def _to_payload_messages(self, messages: List[BaseMessage]) -> List[Dict[str, str]]:
+        payload: List[Dict[str, str]] = []
+        for m in messages:
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            payload.append({"role": self._role_of(m), "content": content})
+        return payload
+ 
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        body: Dict[str, Any] = {
+            "model": self.model_name,
+            "messages": self._to_payload_messages(messages),
+            "temperature": self.temperature,
+        }
+        if stop:
+            body["stop"] = stop
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.extra_headers:
+            headers.update(self.extra_headers)
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        resp = requests.post(url, json=body, headers=headers, timeout=self.timeout)
+        resp.raise_for_status()
+        data = resp.json()
+
+        if data.get("error"):
+            raise RuntimeError(f"OpenRouter error: {data['error']}")
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("OpenRouter tidak mengembalikan choices.")
+
+        msg = choices[0].get("message", {}) or {}
+        # Model reasoning (mis. DeepSeek R1) kadang menaruh jawaban final di
+        # "content"; bila kosong, fallback ke "reasoning".
+        content = msg.get("content") or msg.get("reasoning") or ""
+
+        ai = AIMessage(content=content)
+        usage = data.get("usage") or {}
+        generation = ChatGeneration(message=ai)
+        return ChatResult(
+            generations=[generation],
+            llm_output={"model_name": data.get("model", self.model_name), "usage": usage},
+        )
 
 def _split_provider(model_name: str):
     """Kembalikan (provider | None, model_id)."""
@@ -18,17 +114,22 @@ def _split_provider(model_name: str):
             return head.lower(), tail
     return None, model_name
 
-def _build(provider: str, model_id: str) -> ChatOpenAI:
+def _normalize_ollama_base_url(url: str) -> str:
+    """ChatOllama memakai API native, jadi buang sufiks '/v1' bila ada."""
+    url = (url or "").rstrip("/")
+    if url.endswith("/v1"):
+        url = url[: -len("/v1")]
+    return url or "http://localhost:11434"
+
+
+
+def _build(provider: str, model_id: str)
     if provider == "openrouter":
         if not OPENROUTER_API_KEY:
             raise ValueError(
                 "OPENROUTER_API_KEY belum diset. Daftar gratis di https://openrouter.ai "
                 "lalu isi OPENROUTER_API_KEY di .env."
             )
-        # Auto pilih model termurah: resolusi terjadi saat runtime (di-cache).
-        if model_id.strip().lower() == _AUTO_CHEAPEST_ID:
-            from backend.llm.openrouter_pricing import resolve_cheapest_model
-            model_id = resolve_cheapest_model()
 
         headers = {}
         if OPENROUTER_SITE_URL:
@@ -36,27 +137,21 @@ def _build(provider: str, model_id: str) -> ChatOpenAI:
         if OPENROUTER_APP_NAME:
             headers["X-Title"] = OPENROUTER_APP_NAME
 
-        kwargs = dict(
-            model=model_id,
-            temperature=0,
+        return ChatOpenRouter(
+            model_name=model_id,
             api_key=OPENROUTER_API_KEY,
             base_url=OPENROUTER_BASE_URL,
-            default_headers=headers or None,
+            temperature=0,
+            timeout=LLM_TIMEOUT,
+            extra_headers=headers or None,
         )
-        # provider.sort = "price" -> selalu ambil PROVIDER termurah untuk model ini.
-        if OPENROUTER_SORT_BY_PRICE:
-            kwargs["extra_body"] = {"provider": {"sort": "price"}}
-        return ChatOpenAI(**kwargs)
 
-    if provider == "ollama":
-        # Ollama menyediakan endpoint OpenAI-compatible di /v1; api_key diabaikan
-        # oleh Ollama tetapi harus diisi string non-kosong oleh klien OpenAI.
-        
+    if provider == "ollama":        
         return ChatOpenAI(
             model=model_id,
             temperature=0,
             api_key="ollama",
-            base_url=OLLAMA_BASE_URL,
+            base_url=_normalize_ollama_base_url(OLLAMA_BASE_URL),
         )
 
     raise ValueError(f"Provider LLM tidak dikenal: {provider}")
