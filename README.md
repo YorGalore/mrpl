@@ -47,7 +47,26 @@ The chatbot supports cybersecurity question-answering, threat actor analysis, ma
 - Knowledge retrieval from RDF/SPARQL resources
 - Context-aware answer generation using LLMs
 
-## Documentation Details
+## Environment Setup
+### Clone Repository
+git clone https://github.com/Software-Engineering-2026-Class/Kel9-LLM-Chatbot-SEPSESCSKG.git
+cd Kel9-LLM-Chatbot-SEPSESCSKG
+
+### Install Dependencies
+pip install -r requirements.txt
+
+### Running - Backend
+cd backend
+uvicorn main:app --reload
+### Backend runs at:
+http://localhost:8000
+
+### Running - Frontend
+cd frontend
+npm install
+npm run dev
+### Frontend runs at:
+http://localhost:3000
 
 ### System Overview
 The system consists of the following components:
