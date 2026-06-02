@@ -94,8 +94,6 @@ class ChatOpenRouter(BaseChatModel):
             raise RuntimeError("OpenRouter tidak mengembalikan choices.")
 
         msg = choices[0].get("message", {}) or {}
-        # Model reasoning (mis. DeepSeek R1) kadang menaruh jawaban final di
-        # "content"; bila kosong, fallback ke "reasoning".
         content = msg.get("content") or msg.get("reasoning") or ""
 
         ai = AIMessage(content=content)
@@ -123,7 +121,7 @@ def _normalize_ollama_base_url(url: str) -> str:
 
 
 
-def _build(provider: str, model_id: str)
+def _build(provider: str, model_id: str):
     if provider == "openrouter":
         if not OPENROUTER_API_KEY:
             raise ValueError(
@@ -147,7 +145,7 @@ def _build(provider: str, model_id: str)
         )
 
     if provider == "ollama":        
-        return ChatOpenAI(
+        return ChatOllama(
             model=model_id,
             temperature=0,
             api_key="ollama",

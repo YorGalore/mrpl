@@ -84,11 +84,19 @@ SELECT DISTINCT ?cveId WHERE {{
   ?cve cve:hasCWE ?cwe ; cve:id ?cveId .
 }} LIMIT 30"""
 
+def _high_severity_fallback() -> str:
+    """Query aman bila tidak ada pola spesifik dikenal."""
+    return f"""{PREFIXES}
+SELECT DISTINCT ?cveId ?score WHERE {{
+  ?cve cve:id ?cveId ; cve:hasCVSS3BaseMetric ?m . ?m cvss:baseScore ?score .
+  FILTER(?score >= 9.0)
+}} ORDER BY DESC(?score) LIMIT 10"""
 
+#regex tanpa LLM
 def regex_sparql(question: str) -> Optional[str]:
     """Fast-path tanpa LLM. None bila tak ada pola dikenal."""
     q = question.lower()
- 
+
     cve = CVE_RE.search(question)
     if cve:
         cid = cve.group().upper()
@@ -99,95 +107,119 @@ def regex_sparql(question: str) -> Optional[str]:
         if any(k in q for k in ("produk", "product", "cpe", "software", "terdampak", "affected")):
             return _cve_products(cid)
         return _cve_full(cid)
- 
+
     cwe = _CWE_RE.search(question)
     if cwe:
         return _cves_by_cwe(cwe.group().upper())
- 
+
     return None
+
     
 
 # LLM Generator
 def llm_generate(question: str, model: str = DEFAULT_MODEL) -> str:
+    """Generate SPARQL via LLM. Raise Exception bila LLM tidak tersedia/gagal."""
     llm = LLMProvider.get_model(model)
     chain = prompt | llm
     response = chain.invoke({"ontology": ONTOLOGY_CONTEXT, "question": question})
     return response.content.strip()
- 
- 
+
+
 def extract_sparql(text: str) -> str:
     match = re.search(r"```(?:sparql)?\s*([\s\S]+?)```", text, re.IGNORECASE)
     query = match.group(1).strip() if match else text.strip()
-    # Pastikan prefix tersedia agar query tidak gagal saat dieksekusi.
     if "PREFIX" not in query.upper():
         query = f"{PREFIXES}\n{query}"
     return query
- 
- 
+
+
 def validate_sparql(query: str) -> bool:
-    upper = query.upper()
     if _FORBIDDEN.search(query):
         return False
+    upper = query.upper()
     has_select = "SELECT" in upper or "ASK" in upper
     return has_select and "{" in query and "}" in query
 
 
 def generate_sparql(question: str, model: str = DEFAULT_MODEL) -> Tuple[str, str]:
-    """Kembalikan (query, method). method = 'regex' | 'llm' | 'fallback'.
-    TIDAK PERNAH raise: selalu mengembalikan query yang bisa dieksekusi."""
+    """
+    Kembalikan (query, method). method = 'regex' | 'llm' | 'fallback' | 'fallback_keyword'.
+    TIDAK PERNAH raise: selalu mengembalikan query yang dapat dieksekusi.
+    FIX BUG 5: LLM error dan SPARQL validation failure ditangkap secara eksplisit,
+    fallback query dikembalikan tanpa crash.
+    """
+    # 1. Fast-path regex
     q = regex_sparql(question)
     if q:
         return q, "regex"
- 
+
+    # 2. LLM generation (opsional — gagal gracefully)
     try:
         raw = llm_generate(question, model=model)
         q = extract_sparql(raw)
         if validate_sparql(q):
             return q, "llm"
-    except Exception:
-        pass  # turun ke fallback
+        else:
+            print(f"[nl2sparql] LLM menghasilkan SPARQL tidak valid, pakai fallback.")
+    except Exception as e:
+        print(f"[nl2sparql] LLM tidak tersedia atau error: {e}. Pakai fallback.")
 
-    # Fallback aman: kalau ada CVE -> detail penuh; kalau tidak -> CVE skor tinggi.
+    # 3. Fallback — jangan crash
     cve = CVE_RE.search(question)
     if cve:
         return _cve_full(cve.group().upper()), "fallback"
-    return (f"""{PREFIXES}
-            SELECT DISTINCT ?cveId ?score WHERE {{
-            ?cve cve:id ?cveId ; cve:hasCVSS3BaseMetric ?m . ?m cvss:baseScore ?score .
-            FILTER(?score >= 9.0)
-            }} ORDER BY DESC(?score) LIMIT 10""",
-        "fallback",
-    )
+
+    return _high_severity_fallback(), "fallback_keyword"
+
  
 def run_kg_query(query: str) -> List[Dict[str, str]]:
-    """Eksekusi pada endpoint publik (jalur utama).
-    SPARQLConfig sekarang public-safe (default_graph=None, infer=False) sehingga
-    query tidak lagi dipaksa ke graph kosong. Bila publik gagal, client otomatis
-    mencoba Virtuoso lokal (lihat backend/sparql/client.run_query)."""
+    """
+    Eksekusi SPARQL pada endpoint publik.
 
-    client = VirtuosoClient(
-        SPARQLConfig(endpoint=SPARQL_PUBLIC_ENDPOINT, timeout=SPARQL_TIMEOUT, infer=False))
-    return bindings_to_rows(client.run_query(query))
+    FIX BUG 5: Kembalikan [] jika endpoint tidak tersedia / timeout,
+    sehingga caller (orchestrator) tidak crash dan bisa menggunakan sumber lain.
+    """
+    try:
+        client = VirtuosoClient(
+            SPARQLConfig(
+                endpoint=SPARQL_PUBLIC_ENDPOINT,
+                timeout=SPARQL_TIMEOUT,
+                infer=False,
+            )
+        )
+        return bindings_to_rows(client.run_query(query))
+    except Exception as e:
+        print(f"[nl2sparql] run_kg_query gagal (endpoint tidak tersedia?): {e}")
+        return []        # FIX: kembalikan list kosong, jangan raise
 
 def execute_question(question: str, model: str = DEFAULT_MODEL) -> dict:
+
     sparql_query, method = generate_sparql(question, model=model)
-    rows = run_kg_query(sparql_query)
-    return {"question": question, "method": method, "sparql": sparql_query, "results": rows}
-execute_nl_query = execute_question
+    rows = run_kg_query(sparql_query)   # FIX: tidak raise lagi
+    if not rows and method not in ("regex",):
+        method = f"{method}_no_results"
+
+    return {
+        "question": question,
+        "method": method,
+        "sparql": sparql_query,
+        "results": rows,
+    }
+
 
 # Demo
 if __name__ == "__main__":
-    q = "Show vulnerabilities related to CVE-2021-44228"
-
-    result = execute_question(q)
-    print("QUESTION:")
-    print(result["question"])
-    print("METHOD  :")
-    print(result["method"])
-    print("\nSPARQL:")
-    print(result["sparql"])
-    print("\nRESULTS:")
-    for r in result["results"]:
-        print(r)
+    tests = [
+        "Show vulnerabilities related to CVE-2021-44228",
+        "What is APT41?",
+        "Link traffic anomalies",
+        "List CVEs with CVSS score above 9",
+    ]
+    for q in tests:
+        print(f"\n=== QUESTION: {q} ===")
+        result = execute_question(q)
+        print("METHOD  :", result["method"])
+        print("SPARQL  :", result["sparql"][:200])
+        print("RESULTS :", result["results"][:3] if result["results"] else "(kosong)")
 
         

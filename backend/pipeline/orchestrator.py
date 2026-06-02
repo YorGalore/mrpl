@@ -7,12 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from backend.config import DEFAULT_MODEL, SPARQL_PUBLIC_ENDPOINT
 from backend.llm.llm_models import LLMProvider
 from backend.logs.vector_store import search_logs
-from backend.patterns import LOG_KEYWORDS, MALWARE_KEYWORDS, THREAT_KEYWORDS, find_cve, find_cwe
+from backend.patterns import LOG_KEYWORDS, MALWARE_KEYWORDS, THREAT_KEYWORDS, extract_actor_name, find_cve, find_cwe
 from backend.pipeline.prompts import system_prompt_for
 from backend.sparql.client import PREFIXES, SPARQLConfig, VirtuosoClient, bindings_to_rows
 from backend.sparql.graph_context import build_attack_chain_context
 from backend.sparql.nl2sparql import generate_sparql, run_kg_query
-from backend.threat.modul_threat import get_malware_context, get_threat_context
+from backend.threat.modul_threat import get_malware_context, get_threat_context, search_mitre_general
 from backend.threat.modul_vulnerability import get_vuln_context
 
 def _local_name(uri: str) -> str:
@@ -25,7 +25,9 @@ def query_router(mode: str, message: str) -> Dict[str, bool]:
     q = message.lower()
     want_kg = mode in ("threat_intelligence", "combined")
     want_logs = mode in ("log_analysis", "combined") or any(kw in q for kw in LOG_KEYWORDS)
-    return {"kg": want_kg, "logs": want_logs}
+    # FIX BUG 7: route ke MITRE general search
+    want_mitre_general = any(kw in q for kw in MITRE_GENERAL_KEYWORDS)
+    return {"kg": want_kg, "logs": want_logs, "mitre_general": want_mitre_general}
 
 def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
     """Relasi CVE dari endpoint SEPSES publik untuk visualisasi graph (Issue #03)."""
@@ -50,6 +52,7 @@ def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
         ]
     except Exception:
         return []
+
 
 def _cwe_triples(cwe_id: str, limit: int = 25) -> List[Dict[str, str]]:
     try:
@@ -95,22 +98,47 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
         except Exception as e:
             parts.append(f"[vuln lookup gagal: {e}]")
         triples.extend(_cve_triples(cve_id))
-        
+
     if cwe_id and not cve_id:
         triples.extend(_cwe_triples(cwe_id))
         sources.append(SPARQL_PUBLIC_ENDPOINT)
 
     if any(kw in q for kw in THREAT_KEYWORDS):
-        kw = next(kw for kw in THREAT_KEYWORDS if kw in q)
-        parts.append(get_threat_context(kw))
-        sources.append("MITRE ATT&CK")
+        actor_name = extract_actor_name(message)       # mis. 'APT41' bukan 'apt'
+        if actor_name:
+            try:
+                ctx = get_threat_context(actor_name)
+                parts.append(ctx)
+                sources.append("MITRE ATT&CK")
+            except Exception as e:
+                parts.append(f"[threat lookup gagal untuk '{actor_name}': {e}]")
 
     if any(kw in q for kw in MALWARE_KEYWORDS):
-        kw = next(kw for kw in MALWARE_KEYWORDS if kw in q)
-        parts.append(get_malware_context(kw))
-        sources.append("MITRE ATT&CK")
+        # Ambil keyword malware terpanjang yang match (lebih spesifik)
+        matched_kw = max(
+            (kw for kw in MALWARE_KEYWORDS if kw in q),
+            key=len,
+            default=None,
+        )
+        if matched_kw:
+            try:
+                ctx = get_malware_context(matched_kw)
+                parts.append(ctx)
+                sources.append("MITRE ATT&CK")
+            except Exception as e:
+                parts.append(f"[malware lookup gagal untuk '{matched_kw}': {e}]")
+
+    if any(kw in q for kw in MITRE_GENERAL_KEYWORDS):
+        try:
+            ctx = search_mitre_general(message)
+            if ctx:
+                parts.append(ctx)
+                sources.append("MITRE ATT&CK (Techniques)")
+        except Exception as e:
+            parts.append(f"[mitre general search gagal: {e}]")
 
     # --- NL2SPARQL: jalur generik (regex fast-path lalu LLM) ---
+    # FIX BUG 5: Bungkus seluruh blok dalam try/except yang lebih ketat.
     try:
         sparql_used, method = generate_sparql(message, model=model)
         rows = run_kg_query(sparql_used)
@@ -120,7 +148,11 @@ def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
             parts.append("=== Hasil SPARQL (KG) ===\n" + "\n".join(lines))
             sources.append("SEPSES CSKG (SPARQL)")
     except Exception as e:
-        parts.append(f"[NL2SPARQL gagal: {e}]")
+        # Jangan crash — catat sebagai info debug, bukan append ke parts
+        print(f"[orchestrator] NL2SPARQL/SPARQL gagal (non-fatal): {e}")
+        # Hanya set method jika belum ada hasil lain
+        if not parts:
+            method = "error"
 
     return {
         "context": "\n\n".join(p for p in parts if p),
@@ -167,9 +199,21 @@ def answer(
         sparql_used = kg["sparql"]
         method = kg["method"]
 
+    # FIX BUG 7: Jika bukan mode KG tapi ada MITRE_GENERAL_KEYWORDS, ambil juga.
+    if not route["kg"] and route.get("mitre_general"):
+        try:
+            ctx = search_mitre_general(message)
+            if ctx:
+                parts.append(ctx)
+                sources.append("MITRE ATT&CK (Techniques)")
+        except Exception as e:
+            print(f"[orchestrator] mitre_general gagal: {e}")
+
     if route["logs"]:
         try:
-            parts.append(search_logs(message))
+            log_result = search_logs(message)
+            if log_result:
+                parts.append(log_result)
             sources.append("Local security logs (ChromaDB)")
         except Exception as e:
             parts.append(f"[log search gagal: {e}]")
@@ -180,13 +224,13 @@ def answer(
     else:
         user_msg = (
             f"Pertanyaan: {message}\n"
-            "(Tidak ada data spesifik ditemukan di knowledge graph untuk pertanyaan ini.)"
+            "(Tidak ada data spesifik ditemukan di knowledge graph / MITRE untuk pertanyaan ini. "
+            "Jawab berdasarkan pengetahuan umum keamanan siber.)"
         )
 
     resolved_model = model
     try:
         llm = LLMProvider.get_model(model)
-        # Bila model = auto-cheapest, tampilkan model nyata yang terpilih.
         resolved_model = getattr(llm, "model_name", None) or model
         messages = [SystemMessage(content=system_prompt_for(mode))]
         messages.extend(_history_messages(history))
@@ -194,18 +238,27 @@ def answer(
         resp = llm.invoke(messages)
         answer_text = resp.content
     except Exception as e:
-        answer_text = f"⚠️ Gagal memanggil LLM ({model}): {e}"
+        answer_text = (
+            f"⚠️ Gagal memanggil LLM ({model}): {e}\n\n"
+            + (f"Konteks yang berhasil diambil:\n{context}" if context else "")
+        )
 
     return {
         "message": answer_text,
         "triples": triples,
         "llmUsed": resolved_model,
         "sources": list(dict.fromkeys(sources)),
-        "method": method,      # explainability: regex | llm | None
+        "method": method,
         "sparql": sparql_used,
     }
 
-
 if __name__ == "__main__":
     import json
+    print("=== Test: APT41 ===")
+    print(json.dumps(answer("What is APT41?"), indent=2, ensure_ascii=False))
+    print()
+    print("=== Test: Link traffic anomalies ===")
+    print(json.dumps(answer("Link traffic anomalies"), indent=2, ensure_ascii=False))
+    print()
+    print("=== Test: CVE-2017-0144 ===")
     print(json.dumps(answer("Apa bahaya dari CVE-2017-0144?"), indent=2, ensure_ascii=False))
