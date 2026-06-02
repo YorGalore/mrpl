@@ -51,6 +51,29 @@ def _cve_triples(cve_id: str, limit: int = 25) -> List[Dict[str, str]]:
     except Exception:
         return []
 
+def _cwe_triples(cwe_id: str, limit: int = 25) -> List[Dict[str, str]]:
+    try:
+        client = VirtuosoClient(
+            SPARQLConfig(endpoint=SPARQL_PUBLIC_ENDPOINT, default_graph=None, infer=False)
+        )
+        query = f"""{PREFIXES}
+        SELECT ?p ?o WHERE {{
+            ?cwe cwe:id "{cwe_id}" .
+            ?cwe ?p ?o .
+        }} LIMIT {int(limit)}"""
+        rows = bindings_to_rows(client.run_query(query, default_graph=None, infer=False))
+        return [
+            {
+                "subject": cwe_id,
+                "predicate": _local_name(r.get("p", "")),
+                "object": _local_name(r.get("o", "")),
+                "source": SPARQL_PUBLIC_ENDPOINT,
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+    
 def _kg_retrieve(message: str, model: str) -> Dict[str, Any]:
     """Retrieval dari knowledge graph (Issue #03): konteks, triples, sources, sparql, method."""
     parts: List[str] = []

@@ -4,7 +4,7 @@ export type AnalysisMode =
   | "combined";
 
 export type MessageRole = "user" | "assistant" | "system";
-export type LLMModel = "gpt-4o-mini" | "deepseek-chat";
+export type LLMModel = string;
 
 export interface RDFTriple {
   subject: string;

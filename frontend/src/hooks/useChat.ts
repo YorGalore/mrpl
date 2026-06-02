@@ -40,16 +40,16 @@ export function useChat() {
         history,
       };
 
-      const res = await fetch(
-        "http://localhost:8000/api/chat",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(request),
-        }
-      );
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL ?? "/api/chat";
+
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
 
       if (!res.ok) throw new Error(`API error: ${res.status}`);
 

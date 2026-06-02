@@ -7,6 +7,8 @@ interface ChatStore {
   sessions: ChatSession[];
   activeSessionId: string | null;
   currentMode: AnalysisMode;
+  currentModel: string;
+  availableModels: string[];
   isLoading: boolean;
   isGraphViewerOpen: boolean;
   selectedMessage: Message | null;
@@ -17,6 +19,8 @@ interface ChatStore {
   deleteSession: (id: string) => void;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   setCurrentMode: (mode: AnalysisMode) => void;
+  setCurrentModel: (model: string) => void;
+  setAvailableModels: (models: string[]) => void;
   setLoading: (loading: boolean) => void;
   toggleGraphViewer: (message?: Message) => void;
   getActiveSession: () => ChatSession | null;
@@ -29,6 +33,7 @@ export const useChatStore = create<ChatStore>()(
       sessions: [],
       activeSessionId: null,
       currentMode: "threat_intelligence",
+      currentModel: "",
       isLoading: false,
       isGraphViewerOpen: false,
       selectedMessage: null,
@@ -88,6 +93,16 @@ export const useChatStore = create<ChatStore>()(
         })),
 
       setCurrentMode: (mode) => set({ currentMode: mode }),
+      setCurrentModel: (model) => set({ currentModel: model }),
+      setAvailableModels: (models) =>
+        set((s) => ({
+          availableModels: models,
+          currentModel:
+            s.currentModel && models.includes(s.currentModel)
+              ? s.currentModel
+              : models[0] ?? "",
+        })),
+        
       setLoading: (loading) => set({ isLoading: loading }),
 
       toggleGraphViewer: (message) =>

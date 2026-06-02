@@ -7,6 +7,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { ModeSelector } from "../analysis/ModeSelector";
+import { ModelSelector } from "../analysis/ModelSelector";
 import { useChat } from "@/hooks/useChat";
 
 import {

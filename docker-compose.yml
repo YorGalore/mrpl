@@ -9,15 +9,13 @@ services:
       DBA_PASSWORD: dba
       SPARQL_UPDATE: "true"
       DEFAULT_GRAPH: "http://sepses.local"
+      VIRT_Parameters_DirsAllowed: ".,../vad,/usr/share/proj,/database,/opt/virtuoso-opensource/vad"
+
     volumes:
       - ./virtuoso-data:/database
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8890/sparql?query=ASK%20%7B%7D || exit 1"]
+      test: ["CMD-SHELL", "/opt/virtuoso-opensource/bin/isql", "1111", "dba", "dba", "exec=status();"]
       interval: 15s
       timeout: 10s
       retries: 10
     restart: unless-stopped
-
-volumes:
-  virtuoso-data:
-    driver: local

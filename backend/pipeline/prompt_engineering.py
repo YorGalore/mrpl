@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Dict
 
 from backend.logs.vector_store import search_logs
-from backend.patterns import (LOG_KEYWORDS, MALWARE_KEYWORDS, SYSTEM_PROMPT, THREAT_KEYWORDS)
+from backend.patterns import LOG_KEYWORDS, MALWARE_KEYWORDS, THREAT_KEYWORDS, find_cve
 from backend.pipeline.prompts import system_prompt_for
 from backend.threat.modul_threat import get_malware_context, get_threat_context
 from backend.threat.modul_vulnerability import get_vuln_context
@@ -37,7 +37,7 @@ def build_prompt(user_question: str) -> Dict[str, str]:
         user_message = (f"Pertanyaan: {user_question}\n"
                         "(Tidak ada data spesifik ditemukan di knowledge graph untuk pertanyaan ini.)")
 
-    return {"system": SYSTEM_PROMPT, "user": user_message}
+    return {"system": system_prompt_for, "user": user_message}
 
 # Test
 if __name__ == "__main__":

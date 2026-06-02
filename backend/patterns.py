@@ -26,3 +26,11 @@ def find_cve(text: str) -> str | None:
     """Kembalikan CVE-ID ter-normalisasi (UPPERCASE) bila ada, else None."""
     m = CVE_RE.search(text or "")
     return m.group().upper() if m else None
+
+CWE_RE = re.compile(r"CWE-\d+", re.IGNORECASE)
+
+
+def find_cwe(text: str) -> str | None:
+    """Kembalikan CWE-ID ter-normalisasi (UPPERCASE) bila ada, else None."""
+    m = CWE_RE.search(text or "")
+    return m.group().upper() if m else None

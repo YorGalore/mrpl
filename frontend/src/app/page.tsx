@@ -27,6 +27,20 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_API_URL
+      ? process.env.NEXT_PUBLIC_API_URL.replace(/\/chat$/, "/models")
+      : "/api/models";
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.models?.length) setAvailableModels(d.models);
+      })
+      .catch(() => {
+        /* backend belum jalan; dropdown disembunyikan */
+      });
+  }, [setAvailableModels]);
+
+  useEffect(() => {
     if (sessions.length === 0) {
       createSession();
     }
